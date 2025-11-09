@@ -7,6 +7,7 @@
 // @match        *://*/*
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @noframes
 // @homepage     https://github.com/huihuia24
 // @source       https://github.com/huihuia24/Web-page-auto-refresh
 // @icon         https://pic.uzzf.com/up/2025-5/2025591617247637.png
@@ -18,7 +19,7 @@
     'use strict';
 
     // 单实例防护
-    const UI_ID = 'realTimeRefreshTool';
+    const UI_ID = 'fullDragRefreshTool';
     if (document.getElementById(UI_ID)) return;
     
     const SITE_KEY = window.location.hostname;
@@ -44,7 +45,6 @@
     let timer = null;
     let isDragging = false;
     let offsetX, offsetY;
-    let animationFrameId = null;
 
     // 计算剩余时间
     function calculateRemaining() {
@@ -77,9 +77,9 @@
         return `${m}m${s}s`;
     }
 
-    // 创建UI（确保时长实时生效）
+    // 创建全屏拖拽UI（交互优化版）
     function createUI() {
-        // 主容器
+        // 主容器（整个区域可拖拽）
         const container = document.createElement('div');
         container.id = UI_ID;
         container.style.cssText = `
@@ -97,31 +97,15 @@
             gap: 12px;
             user-select: none;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            will-change: transform, box-shadow;
+            cursor: default; /* 保持默认指针样式 */
         `;
-
-        // 全局悬停效果
-        container.addEventListener('mouseenter', () => {
-            if (!isDragging) {
-                container.style.transform = 'translateY(-2px)';
-                container.style.boxShadow = isEnabled
-                    ? '0 8px 24px rgba(239, 68, 68, 0.2)'
-                    : '0 8px 24px rgba(99, 102, 241, 0.2)';
-            }
-        });
-        container.addEventListener('mouseleave', () => {
-            if (!isDragging) {
-                container.style.transform = 'translateY(0)';
-                container.style.boxShadow = '0 6px 18px rgba(0, 0, 0, 0.08)';
-            }
-        });
 
         // 恢复位置
         const savedPos = GM_getValue(STATE_KEY.position, { top: '20px', left: '20px' });
         container.style.top = savedPos.top;
         container.style.left = savedPos.left;
 
-        // 图标区域
+        // 图标区域（视觉强化）
         const iconArea = document.createElement('div');
         iconArea.style.cssText = `
             width: 32px;
@@ -131,6 +115,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            transition: all 0.2s ease;
         `;
         iconArea.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" width="18" height="18">
@@ -146,7 +131,7 @@
         title.style.fontWeight = '500';
         title.style.color = '#1e293b';
 
-        // 输入框（实时生效修复）
+        // 输入框（现代风格）
         const input = document.createElement('input');
         input.type = 'number';
         input.value = convertFromSeconds(intervalSeconds, currentUnit);
@@ -159,46 +144,15 @@
             font-size: 14px;
             outline: none;
             transition: border-color 0.2s ease;
-            cursor: text;
         `;
-        
-        // 关键修复：使用input事件实时更新，而非仅依赖change事件
-        input.addEventListener('input', function() {
-            this.value = this.value.replace(/[^0-9]/g, '');
-            if (this.value.trim() === '') return;
-            
-            const value = Math.max(parseInt(this.value, 10) || 1, parseInt(this.min, 10));
-            const newInterval = convertToSeconds(value, currentUnit);
-            
-            // 实时更新状态
-            intervalSeconds = newInterval;
-            GM_setValue(STATE_KEY.interval, intervalSeconds);
-            
-            // 正在运行时立即更新剩余时间
-            if (isEnabled) {
-                remainingSeconds = intervalSeconds;
-                uiElements.statusText.textContent = `(剩余: ${formatTime(remainingSeconds)})`;
-                restartTimer(); // 立即重启计时器应用新时长
-            } else {
-                remainingSeconds = intervalSeconds;
-                uiElements.statusText.textContent = `(剩余: ${formatTime(remainingSeconds)})`;
-            }
-        });
-        
         input.addEventListener('focus', () => {
             input.style.borderColor = '#a5b4fc';
-            container.style.userSelect = 'text';
         });
         input.addEventListener('blur', () => {
             input.style.borderColor = '#e2e8f0';
-            container.style.userSelect = 'none';
-            // 失焦时确保值有效
-            if (input.value.trim() === '') {
-                input.value = convertFromSeconds(intervalSeconds, currentUnit);
-            }
         });
 
-        // 单位选择（实时生效修复）
+        // 单位选择（下拉增强）
         const unitSelect = document.createElement('select');
         unitSelect.style.cssText = `
             padding: 6px 10px;
@@ -223,40 +177,6 @@
             option.selected = unit === currentUnit;
             unitSelect.appendChild(option);
         });
-        
-        // 关键修复：单位切换后立即更新并应用
-        unitSelect.addEventListener('change', function() {
-            const oldUnit = currentUnit;
-            currentUnit = this.value;
-            
-            // 计算新单位下的数值
-            const minValue = currentUnit === 's' ? 5 : 1;
-            let newValue = convertFromSeconds(intervalSeconds, currentUnit);
-            newValue = Math.max(newValue, minValue);
-            
-            // 更新输入框
-            input.value = newValue;
-            input.min = minValue;
-            
-            // 实时更新状态
-            GM_setValue(STATE_KEY.unit, currentUnit);
-            
-            // 正在运行时立即应用新单位
-            if (isEnabled) {
-                // 重新计算剩余时间（基于新单位转换后的总时长）
-                intervalSeconds = convertToSeconds(newValue, currentUnit);
-                GM_setValue(STATE_KEY.interval, intervalSeconds);
-                remainingSeconds = intervalSeconds;
-                uiElements.statusText.textContent = `(剩余: ${formatTime(remainingSeconds)})`;
-                restartTimer(); // 立即重启计时器
-            } else {
-                intervalSeconds = convertToSeconds(newValue, currentUnit);
-                GM_setValue(STATE_KEY.interval, intervalSeconds);
-                remainingSeconds = intervalSeconds;
-                uiElements.statusText.textContent = `(剩余: ${formatTime(remainingSeconds)})`;
-            }
-        });
-        
         unitSelect.addEventListener('focus', () => {
             unitSelect.style.borderColor = '#a5b4fc';
         });
@@ -264,7 +184,7 @@
             unitSelect.style.borderColor = '#e2e8f0';
         });
 
-        // 控制按钮
+        // 立体控制按钮（渐变+悬停动画）
         const controlBtn = document.createElement('button');
         controlBtn.style.cssText = `
             display: flex;
@@ -295,8 +215,20 @@
                 </svg>
                 启动
             `;
+        controlBtn.addEventListener('mouseenter', () => {
+            controlBtn.style.transform = 'translateY(-2px)';
+            controlBtn.style.boxShadow = isEnabled 
+                ? '0 6px 12px rgba(239, 68, 68, 0.3)' 
+                : '0 6px 12px rgba(99, 102, 241, 0.3)';
+        });
+        controlBtn.addEventListener('mouseleave', () => {
+            controlBtn.style.transform = 'translateY(0)';
+            controlBtn.style.boxShadow = isEnabled 
+                ? '0 4px 8px rgba(239, 68, 68, 0.1)' 
+                : '0 4px 8px rgba(99, 102, 241, 0.1)';
+        });
 
-        // 状态显示
+        // 状态显示（动态变化）
         const statusText = document.createElement('span');
         statusText.textContent = isEnabled ? `(剩余: ${formatTime(remainingSeconds)})` : '(已停止)';
         statusText.style.cssText = `
@@ -305,6 +237,7 @@
             min-width: 90px;
             text-align: center;
             font-family: monospace;
+            transition: all 0.3s ease;
         `;
 
         // 组装UI
@@ -316,44 +249,32 @@
         container.appendChild(statusText);
         document.body.appendChild(container);
 
-        // 拖拽功能
+        // 全屏拖拽功能实现（整个UI区域可拖拽）
         container.addEventListener('mousedown', (e) => {
-            if (e.target === input || e.target === unitSelect) {
-                return;
-            }
-            
             isDragging = true;
             const rect = container.getBoundingClientRect();
             offsetX = e.clientX - rect.left;
             offsetY = e.clientY - rect.top;
             container.style.transition = 'none';
             container.style.zIndex = '999999';
-            container.style.boxShadow = '0 10px 30px rgba(0, 0, 0, 0.15)';
+            container.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.15)';
             e.preventDefault();
         });
 
         document.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
+            const newLeft = e.clientX - offsetX;
+            const newTop = e.clientY - offsetY;
+            const maxLeft = window.innerWidth - container.offsetWidth - 20;
+            const maxTop = window.innerHeight - container.offsetHeight - 20;
             
-            if (animationFrameId) cancelAnimationFrame(animationFrameId);
-            animationFrameId = requestAnimationFrame(() => {
-                const newLeft = e.clientX - offsetX;
-                const newTop = e.clientY - offsetY;
-                const maxLeft = window.innerWidth - container.offsetWidth - 20;
-                const maxTop = window.innerHeight - container.offsetHeight - 20;
-                
-                container.style.left = `${Math.max(20, Math.min(newLeft, maxLeft))}px`;
-                container.style.top = `${Math.max(20, Math.min(newTop, maxTop))}px`;
-            });
+            container.style.left = `${Math.max(20, Math.min(newLeft, maxLeft))}px`;
+            container.style.top = `${Math.max(20, Math.min(newTop, maxTop))}px`;
         });
 
         document.addEventListener('mouseup', () => {
             if (isDragging) {
                 isDragging = false;
-                if (animationFrameId) {
-                    cancelAnimationFrame(animationFrameId);
-                    animationFrameId = null;
-                }
                 container.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
                 container.style.zIndex = '99999';
                 container.style.boxShadow = '0 6px 18px rgba(0, 0, 0, 0.08)';
@@ -364,7 +285,34 @@
             }
         });
 
-        // 控制按钮事件
+        // 其他事件绑定
+        input.addEventListener('change', () => {
+            const value = Math.max(parseInt(input.value, 10) || 1, input.min);
+            intervalSeconds = convertToSeconds(value, currentUnit);
+            GM_setValue(STATE_KEY.interval, intervalSeconds);
+            
+            if (isEnabled) {
+                restartTimer();
+            } else {
+                remainingSeconds = intervalSeconds;
+                statusText.textContent = `(剩余: ${formatTime(remainingSeconds)})`;
+            }
+        });
+
+        unitSelect.addEventListener('change', () => {
+            currentUnit = unitSelect.value;
+            input.value = convertFromSeconds(intervalSeconds, currentUnit);
+            input.min = currentUnit === 's' ? 5 : 1;
+            GM_setValue(STATE_KEY.unit, currentUnit);
+            
+            if (isEnabled) {
+                restartTimer();
+            } else {
+                remainingSeconds = intervalSeconds;
+                statusText.textContent = `(剩余: ${formatTime(remainingSeconds)})`;
+            }
+        });
+
         controlBtn.addEventListener('click', () => {
             if (isEnabled) {
                 stopTimer();
@@ -376,8 +324,6 @@
                 `;
                 controlBtn.style.background = 'linear-gradient(135deg, #6366f1, #8b5cf6)';
                 statusText.textContent = '(已停止)';
-                container.dispatchEvent(new Event('mouseleave'));
-                container.dispatchEvent(new Event('mouseenter'));
             } else {
                 startTimer();
                 controlBtn.innerHTML = `
@@ -388,23 +334,18 @@
                     停止
                 `;
                 controlBtn.style.background = 'linear-gradient(135deg, #f87171, #ef4444)';
-                container.dispatchEvent(new Event('mouseleave'));
-                container.dispatchEvent(new Event('mouseenter'));
             }
         });
 
         return { container, controlBtn, statusText, input, unitSelect, iconArea };
     }
 
-    // 计时器控制（确保立即应用新时长）
+    // 计时器控制
     function startTimer() {
         isEnabled = true;
         lastStartTime = Date.now();
-        // 强制使用当前设置的时长
-        remainingSeconds = intervalSeconds;
         GM_setValue(STATE_KEY.isEnabled, true);
         GM_setValue(STATE_KEY.lastStartTime, lastStartTime);
-        GM_setValue(STATE_KEY.interval, intervalSeconds); // 确保存储最新值
 
         if (timer) clearInterval(timer);
         timer = setInterval(() => {
@@ -426,24 +367,9 @@
         GM_setValue(STATE_KEY.isEnabled, false);
     }
 
-    // 关键修复：重启计时器时强制使用最新设置的时长
     function restartTimer() {
-        if (timer) clearInterval(timer);
-        lastStartTime = Date.now();
-        remainingSeconds = intervalSeconds; // 使用最新的时长
-        GM_setValue(STATE_KEY.lastStartTime, lastStartTime);
-        GM_setValue(STATE_KEY.interval, intervalSeconds); // 确保存储最新值
-        
-        timer = setInterval(() => {
-            remainingSeconds--;
-            uiElements.statusText.textContent = `(剩余: ${formatTime(remainingSeconds)})`;
-
-            if (remainingSeconds <= 0) {
-                clearInterval(timer);
-                GM_setValue(STATE_KEY.lastStartTime, Date.now());
-                window.location.reload();
-            }
-        }, 1000);
+        stopTimer();
+        startTimer();
     }
 
     // 初始化
