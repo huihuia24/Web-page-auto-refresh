@@ -10,6 +10,8 @@
 // @homepage     https://github.com/huihuia24
 // @source       https://github.com/huihuia24/Web-page-auto-refresh
 // @icon         https://pic.uzzf.com/up/2025-5/2025591617247637.png
+// @downloadURL https://update.greasyfork.org/scripts/555271/%E7%BD%91%E9%A1%B5%E5%AE%9A%E6%97%B6%E5%88%B7%E6%96%B0.user.js
+// @updateURL https://update.greasyfork.org/scripts/555271/%E7%BD%91%E9%A1%B5%E5%AE%9A%E6%97%B6%E5%88%B7%E6%96%B0.meta.js
 // ==/UserScript==
 
 (function() {
